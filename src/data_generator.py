@@ -2,6 +2,7 @@ import pandas as pd
 import random
 import re
 import ollama
+import numpy as np
 
 # Load the diabetes dataset
 df = pd.read_csv("../data/diabetes.csv")
@@ -39,13 +40,27 @@ class DataGenerator:
     def parse_with_tinyllama(self, response_content):
         """Use TinyLlama to parse the response and return the extracted features."""
         # Prompt TinyLlama to interpret the content and return features
-        prompt = f"This is the query: \n{response_content}\n\nExamine it and succinctly extract the following features from it if present: pregnancies, glucose, blood_pressure, skin_thickness, insulin, bmi, diabetes_pedigree_function, age, outcome. If not present, enter None"
+        prompt = f"""
+        Examine the following text: "{response_content}"
+
+        Extract the following features:
+        - Pregnancies (an integer number, or None if not mentioned)
+        - Glucose (an integer number, or None if not mentioned)
+        - Blood Pressure (an integer number, or None if not mentioned)
+        - Skin Thickness (an integer or float number, or None if not mentioned)
+        - Insulin (an integer or float number, or None if not mentioned)
+        - BMI (a float number, or None if not mentioned)
+        - Age (an integer number, or None if not mentioned)
+
+        For each feature, if the feature is mentioned in the text, return its value. If it is not mentioned, return `None`. Respond in this exact format:
+        pregnancies: result glucose: result blood_pressure: result skin_thickness: result insulin: result bmi: result age: result
+        """
         response = ollama.chat(model="tinyllama", messages=[{"role": "user", "content": prompt}])
-        
+                
         # Extract the parsed features from the response
         parsed_query = response['message']['content']
 
-        print(parsed_query) # debug
+        # print(parsed_query) # debug
         
         return self.parse_data(parsed_query)
 
@@ -62,13 +77,12 @@ class DataGenerator:
                 feature_value = match.group(2)
                 parsed_features[feature_name] = feature_value
 
-        print(parsed_features)  # debug
+        # print(parsed_features)  # debug
 
         return parsed_features
 
-
     def generate_synthetic_data(self, features):
-        """Generate synthetic data based on extracted features"""
+        """Generate synthetic data based on extracted features, using statistical distributions"""
         # Extract features
         age = features.get('age', None)
         pregnancies = features.get('pregnancies', None)
@@ -81,48 +95,51 @@ class DataGenerator:
         # Filter the dataset based on the known features (those that are not None)
         filtered_df = df
         if age is not None:
-            filtered_df = filtered_df[filtered_df['Age'] == int(age)]
+            filtered_df = filtered_df[filtered_df['Age'] == age]
         if pregnancies is not None:
-            filtered_df = filtered_df[filtered_df['Pregnancies'] == int(pregnancies)]
+            filtered_df = filtered_df[filtered_df['Pregnancies'] == pregnancies]
         if glucose is not None:
-            filtered_df = filtered_df[filtered_df['Glucose'] == int(glucose)]
-        if blood_pressure is not None:
-            filtered_df = filtered_df[filtered_df['BloodPressure'] == int(blood_pressure)]
+            filtered_df = filtered_df[filtered_df['Glucose'] == glucose]
         if bmi is not None:
-            filtered_df = filtered_df[filtered_df['BMI'] == float(bmi)]
-        if diabetes_pedigree_function is not None:
-            filtered_df = filtered_df[filtered_df['DiabetesPedigreeFunction'] == float(diabetes_pedigree_function)]
-        
+            filtered_df = filtered_df[filtered_df['BMI'] == bmi]
+
         # If no matching data found, sample from the entire dataset
         if filtered_df.empty:
             print(f"No matching data for the specified features, sampling from the entire dataset.")
             filtered_df = df.sample(n=1)
 
-        # Generate synthetic data for missing features based on statistics of the filtered group
-        # Use the mean or median of the filtered data for missing values
+        # Statistical sampling for missing features
         if insulin_level is None:
-            insulin = filtered_df['Insulin'].mean()  # Use the mean if no insulin level is provided
+            insulin = np.random.normal(filtered_df['Insulin'].mean(), filtered_df['Insulin'].std())
         else:
             insulin = insulin_level  # Use the provided insulin level
 
-        # If any of the other features are missing, use the statistical mean or median for the filtered group
         if age is None:
-            age = filtered_df['Age'].mean()  # Use the mean age in the filtered data
+            age = np.random.normal(filtered_df['Age'].mean(), filtered_df['Age'].std())
         if pregnancies is None:
-            pregnancies = filtered_df['Pregnancies'].mode()[0]  # Use the mode (most frequent) pregnancies value
+            pregnancies = np.random.choice(filtered_df['Pregnancies'].mode())
         if glucose is None:
-            glucose = filtered_df['Glucose'].mean()  # Use the mean glucose level
+            glucose = np.random.normal(filtered_df['Glucose'].mean(), filtered_df['Glucose'].std())
         if blood_pressure is None:
-            blood_pressure = filtered_df['BloodPressure'].mean()  # Use the mean blood pressure
+            blood_pressure = np.random.normal(filtered_df['BloodPressure'].mean(), filtered_df['BloodPressure'].std())
         if bmi is None:
-            bmi = filtered_df['BMI'].mean()  # Use the mean BMI
+            bmi = np.random.normal(filtered_df['BMI'].mean(), filtered_df['BMI'].std())
         if diabetes_pedigree_function is None:
-            diabetes_pedigree_function = filtered_df['DiabetesPedigreeFunction'].mean()  # Use the mean value
+            diabetes_pedigree_function = np.random.normal(filtered_df['DiabetesPedigreeFunction'].mean(), filtered_df['DiabetesPedigreeFunction'].std())
 
-        # Sample the remaining features from the filtered dataset
+        # Capture correlations between features (if any)
+        glucose_insulin_correlation = filtered_df[['Glucose', 'Insulin']].corr().iloc[0, 1]
+
+        # Use the correlation between glucose and insulin to generate insulin based on glucose if required
+        if glucose is not None and insulin_level is None:
+            if glucose_insulin_correlation > 0:
+                # Generate insulin based on glucose if they have a positive correlation
+                insulin = filtered_df['Insulin'].mean() + glucose_insulin_correlation * (glucose - filtered_df['Glucose'].mean())
+
+        # Sample the remaining features (e.g., SkinThickness, Outcome) from the filtered dataset
         sample = filtered_df.sample(n=1)
 
-        # Return the generated synthetic data, with statistical generation where applicable
+        # Return the generated synthetic data, ensuring that it follows statistical distributions
         return {
             'Age': age,
             'Pregnancies': pregnancies,
@@ -134,3 +151,4 @@ class DataGenerator:
             'Insulin': insulin,
             'Outcome': sample['Outcome'].values[0]
         }
+
