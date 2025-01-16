@@ -15,7 +15,7 @@ class DataGenerator:
             'insulin': 'slightly elevated',  # Default insulin level for now
         }
 
-    def extract_features(query):
+    def extract_features(self, query):
         """Use Ollama to extract relevant features from the user's query"""
         # Load the TinyLlama model via Ollama
         response = ollama.chat(model="tinyllama", messages=[{"role": "user", "content": query}])
@@ -26,7 +26,7 @@ class DataGenerator:
         # Extract the content of the response
         response_content = response['message']['content']  # Adjusted based on the response structure
         
-        # Initialize default values
+        # Initialize default values (HUOM)
         features = {
             'age': 28,  # Default age for now
             'pregnancies': 2,  # Default pregnancies for now
@@ -47,5 +47,44 @@ class DataGenerator:
             features['insulin'] = insulin_match.group(1)
         
         return features
-    
-    # TODO: Synthetic data gen
+
+    def generate_synthetic_data(self, features):
+        """Generate synthetic data based on extracted features"""
+        # Extract features
+        age = features['age']
+        pregnancies = features['pregnancies']
+        insulin_level = features['insulin']  # 'slightly elevated', etc.
+
+        # Filter the dataset based on age and gender
+        filtered_df = df[(df['Age'] == age) & (df['Pregnancies'] == pregnancies)]
+
+        if filtered_df.empty:
+            raise ValueError(f"No data found for the given features: Age={age}, Pregnancies={pregnancies}, Gender={gender}")
+
+        # Sample insulin value based on the filtered dataset
+        if insulin_level == 'slightly elevated':
+            insulin_range = filtered_df[filtered_df['Insulin'] > filtered_df['Insulin'].median()]['Insulin']
+        else:
+            insulin_range = filtered_df['Insulin']
+
+        # Ensure insulin range is not empty
+        if insulin_range.empty:
+            insulin = filtered_df['Insulin'].median()  # Use the median if no suitable insulin level is found
+        else:
+            insulin = insulin_range.sample(n=1).iloc[0]  # Randomly select one value from the insulin range
+
+        # Sample the rest of the data
+        sample = filtered_df.sample(n=1)
+
+        # Return the generated synthetic data
+        return {
+            'Age': age,
+            'BMI': sample['BMI'].values[0],
+            'DiabetesPedigreeFunction': sample['DiabetesPedigreeFunction'].values[0],
+            'Glucose': sample['Glucose'].values[0],
+            'BloodPressure': sample['BloodPressure'].values[0],
+            'SkinThickness': sample['SkinThickness'].values[0],
+            'Insulin': insulin,
+            'Outcome': sample['Outcome'].values[0]
+        }
+
