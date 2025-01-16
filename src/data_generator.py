@@ -19,15 +19,6 @@ class DataGenerator:
                     mean = self.data[column].mean()
                     std_dev = self.data[column].std()
                     sample[column] = np.random.normal(mean, std_dev)
-            synthetic_data = synthetic_data.append(sample, ignore_index=True)
+            synthetic_data = pd.concat([synthetic_data, pd.DataFrame([sample])], ignore_index=True)
         
         return synthetic_data
-
-def main():
-    data = pd.read_csv('data/diabetes.csv')
-    generator = DataGenerator(data)
-    synthetic_data = generator.generate_synthetic_data(num_samples=10)
-    print(synthetic_data)
-
-if __name__ == "__main__":
-    main()
